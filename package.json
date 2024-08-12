@@ -2,6 +2,7 @@
   "name": "uploadtask",
   "version": "0.1.0",
   "private": true,
+  "proxy": "https://www.googleapis.com",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -16,6 +17,7 @@
     "@mui/material": "^5.16.7",
     "firebase": "^10.12.5",
     "next": "14.2.5",
+    "node-fetch": "^3.3.2",
     "react": "^18",
     "react-dom": "^18",
     "react-firebase-hooks": "^5.1.1",

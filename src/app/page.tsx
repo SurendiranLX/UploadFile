@@ -69,36 +69,36 @@ const App: React.FC = () => {
         }
     };
 
-    const handleUpload = (file: File) => {
-        setUploading(true);
-        const storageRef = ref(storage, `uploads/${file.name}`);
-        const uploadTask = uploadBytesResumable(storageRef, file);
-        uploadTask.on(
-            "state_changed",
-            (snapshot) => {
-                const progress =
-                    (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                setUploadProgress((prevProgress) => ({
-                    ...prevProgress,
-                    [file.name]: progress,
-                }));
-            },
-            (error) => {
-                console.error("Upload error:", error);
-                setUploading(false);
-            },
-            () => {
-                getDownloadURL(uploadTask.snapshot.ref).then((downloadURL) => {
-                    console.log("File available at", downloadURL);
-                    setUploadedFiles((prevFiles) => [
-                        ...prevFiles,
-                        downloadURL,
-                    ]);
-                    setUploading(false);
-                });
-            }
-        );
-    };
+    // const handleUpload = (file: File) => {
+    //     setUploading(true);
+    //     const storageRef = ref(storage, `uploads/${file.name}`);
+    //     const uploadTask = uploadBytesResumable(storageRef, file);
+    //     uploadTask.on(
+    //         "state_changed",
+    //         (snapshot) => {
+    //             const progress =
+    //                 (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+    //             setUploadProgress((prevProgress) => ({
+    //                 ...prevProgress,
+    //                 [file.name]: progress,
+    //             }));
+    //         },
+    //         (error) => {
+    //             console.error("Upload error:", error);
+    //             setUploading(false);
+    //         },
+    //         () => {
+    //             getDownloadURL(uploadTask.snapshot.ref).then((downloadURL) => {
+    //                 console.log("File available at", downloadURL);
+    //                 setUploadedFiles((prevFiles) => [
+    //                     ...prevFiles,
+    //                     downloadURL,
+    //                 ]);
+    //                 setUploading(false);
+    //             });
+    //         }
+    //     );
+    // };
 
     const listAllFiles = () => {
         const listRef = ref(storage, "uploads/");
@@ -133,10 +133,9 @@ const App: React.FC = () => {
         openPicker({
             clientId: clientId,
             developerKey: developerKey,
-            viewId: "DOCS", // Keep as DOCS if specific image views aren't available
-            token: authResponse?.access_token, // Pass token if required
+            viewId: "DOCS", // Set to DOCS for general file types, adjust as needed for specific MIME types
+            token: authResponse?.access_token,
             multiselect: false,
-            // mimeTypes: ["image/png", "image/jpeg", "image/jpg"], // Specify the MIME types for images
             callbackFunction: handlePickerChange,
         });
     };
@@ -144,58 +143,89 @@ const App: React.FC = () => {
     const handlePickerChange = async (data) => {
         if (data.action === window.google.picker.Action.PICKED) {
             const docs = data.docs;
-            console.log("Documents selected: ", docs);
-
-            // Assume the first document is the one we want to upload
             const file = docs[0];
-            if (file) {
-                try {
-                    const fileUrl = file.url;
-                    const fileName = file.name;
+            const fileUrl = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
 
-                    // Fetch the file from the URL provided by Google Drive
-                    const response = await fetch(fileUrl);
-                    const blob = await response.blob();
+            try {
+                const response = await fetch(fileUrl, {
+                    headers: new Headers({
+                        Authorization: `Bearer ${authResponse.access_token}`,
+                    }),
+                });
 
-                    // Upload the fetched file blob to Firebase Storage
-                    const storageRef = ref(storage, `uploads/${fileName}`);
-                    const uploadTask = uploadBytesResumable(storageRef, blob);
-
-                    uploadTask.on(
-                        "state_changed",
-                        (snapshot) => {
-                            const progress =
-                                (snapshot.bytesTransferred /
-                                    snapshot.totalBytes) *
-                                100;
-                            console.log("Upload is " + progress + "% done");
-                            setUploadProgress({
-                                ...uploadProgress,
-                                [fileName]: progress,
-                            });
-                        },
-                        (error) => {
-                            console.error("Upload error:", error);
-                        },
-                        () => {
-                            getDownloadURL(uploadTask.snapshot.ref).then(
-                                (downloadURL) => {
-                                    console.log(
-                                        "File available at",
-                                        downloadURL
-                                    );
-                                    setUploadedFiles((prevFiles) => [
-                                        ...prevFiles,
-                                        downloadURL,
-                                    ]);
-                                }
-                            );
-                        }
+                if (!response.ok) {
+                    throw new Error(
+                        `Error fetching file: ${response.statusText}`
                     );
-                } catch (error) {
-                    console.error("Failed to fetch or upload file:", error);
                 }
+
+                const blob = await response.blob();
+
+                const storageRef = ref(storage, `uploads/${file.name}`);
+                const uploadTask = uploadBytesResumable(storageRef, blob);
+                uploadTask.on(
+                    "state_changed",
+                    updateProgress,
+                    handleError,
+                    handleSuccess
+                );
+            } catch (error) {
+                console.error("Failed to fetch or upload file:", error);
             }
+        }
+    };
+    const updateProgress = (snapshot) => {
+        const progress =
+            (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        setUploadProgress((prevProgress) => ({
+            ...prevProgress,
+            [snapshot.ref.name]: progress,
+        }));
+    };
+
+    const handleError = (error) => {
+        console.error("Upload error:", error);
+        setUploading(false);
+    };
+
+    const handleUpload = (file) => {
+        const storageRef = ref(storage, `uploads/${file.name}`);
+        const uploadTask = uploadBytesResumable(storageRef, file);
+        uploadTask.on(
+            "state_changed",
+            (snapshot) => {
+                const progress =
+                    (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                console.log("Upload is " + progress + "% done");
+                setUploadProgress((prevProgress) => ({
+                    ...prevProgress,
+                    [file.name]: progress,
+                }));
+            },
+            (error) => {
+                console.error("Upload error:", error);
+                setUploading(false);
+            },
+            () => handleSuccess(uploadTask.snapshot) // Pass the snapshot directly
+        );
+    };
+
+    const handleSuccess = (snapshot) => {
+        if (snapshot) {
+            getDownloadURL(snapshot.ref)
+                .then((downloadURL) => {
+                    console.log("File available at", downloadURL);
+                    setUploadedFiles((prevFiles) => [
+                        ...prevFiles,
+                        downloadURL,
+                    ]);
+                    setUploading(false);
+                })
+                .catch((error) => {
+                    console.error("Error getting download URL:", error);
+                });
+        } else {
+            console.error("Snapshot not available");
         }
     };
 
