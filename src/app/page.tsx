@@ -136,7 +136,7 @@ const App: React.FC = () => {
             viewId: "DOCS", // Keep as DOCS if specific image views aren't available
             token: authResponse?.access_token, // Pass token if required
             multiselect: false,
-            mimeTypes: ["image/png", "image/jpeg", "image/jpg"], // Specify the MIME types for images
+            // mimeTypes: ["image/png", "image/jpeg", "image/jpg"], // Specify the MIME types for images
             callbackFunction: handlePickerChange,
         });
     };
