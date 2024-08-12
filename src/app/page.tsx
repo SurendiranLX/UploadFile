@@ -23,6 +23,12 @@ import UploadFileIcon from "@mui/icons-material/UploadFile";
 import LinkIcon from "@mui/icons-material/Link";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 
+declare global {
+    interface Window {
+        google: any;
+    }
+}
+
 const App: React.FC = () => {
     const [user] = useAuthState(auth);
     const [files, setFiles] = useState<FileList | null>(null);
