@@ -6,7 +6,12 @@ import React, { useState } from "react";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { auth, storage } from "../../firebaseConfig";
 import { signInWithPopup, GoogleAuthProvider } from "firebase/auth";
-import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import {
+    ref,
+    uploadBytesResumable,
+    getDownloadURL,
+    listAll,
+} from "firebase/storage";
 import GooglePicker from "react-google-picker";
 import {
     Button,
@@ -22,6 +27,7 @@ import {
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import LinkIcon from "@mui/icons-material/Link";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
+import Image from "next/image";
 
 declare global {
     interface Window {
@@ -34,6 +40,10 @@ const App: React.FC = () => {
     const [files, setFiles] = useState<FileList | null>(null);
     const [fileURL, setFileURL] = useState<string>("");
     const [uploading, setUploading] = useState<boolean>(false);
+    const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
+    const [localPreviews, setLocalPreviews] = useState<Record<string, string>>(
+        {}
+    );
     const [uploadProgress, setUploadProgress] = useState<
         Record<string, number>
     >({});
@@ -46,6 +56,18 @@ const App: React.FC = () => {
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         if (event.target.files) {
             setFiles(event.target.files);
+
+            // Create object URLs for file previews
+            const previews = Array.from(event.target.files).reduce(
+                (acc, file) => {
+                    acc[file.name] = URL.createObjectURL(file);
+                    return acc;
+                },
+                {} as Record<string, string>
+            );
+            setLocalPreviews(previews);
+
+            // Handle uploads
             Array.from(event.target.files).forEach((file) =>
                 handleUpload(file)
             );
@@ -66,15 +88,43 @@ const App: React.FC = () => {
                     [file.name]: progress,
                 }));
             },
-            (error) => console.error("Upload error:", error),
+            (error) => {
+                console.error("Upload error:", error);
+                setUploading(false);
+            },
             () => {
                 getDownloadURL(uploadTask.snapshot.ref).then((downloadURL) => {
                     console.log("File available at", downloadURL);
+                    setUploadedFiles((prevFiles) => [
+                        ...prevFiles,
+                        downloadURL,
+                    ]);
                     setUploading(false);
                 });
             }
         );
     };
+
+    const listAllFiles = () => {
+        const listRef = ref(storage, "uploads/");
+        listAll(listRef)
+            .then((res) => {
+                const filePromises = res.items.map((itemRef) =>
+                    getDownloadURL(itemRef)
+                );
+                return Promise.all(filePromises);
+            })
+            .then((urls) => {
+                setUploadedFiles(urls);
+            })
+            .catch((error) => {
+                console.error("Error listing files:", error);
+            });
+    };
+
+    React.useEffect(() => {
+        listAllFiles();
+    }, []);
 
     const handleMenuClick = (event: React.MouseEvent<HTMLButtonElement>) => {
         setAnchorEl(event.currentTarget);
@@ -171,13 +221,40 @@ const App: React.FC = () => {
             <List sx={{ mt: 3 }}>
                 {Object.entries(uploadProgress).map(([fileName, progress]) => (
                     <ListItem key={fileName}>
-                        <Typography sx={{ mr: 2 }}>{fileName}</Typography>
+                        {/* <Typography sx={{ mr: 2 }}>{fileName}</Typography> */}
+                        {localPreviews[fileName] && (
+                            <Image
+                                src={localPreviews[fileName]}
+                                alt={fileName}
+                                width={100}
+                                height={100}
+                                style={{ marginRight: 16 }}
+                            />
+                        )}
                         <LinearProgress
                             variant="determinate"
                             value={progress}
                             sx={{ flexGrow: 1, mr: 1 }}
                         />
                         <Typography>{progress.toFixed(1)}%</Typography>
+                    </ListItem>
+                ))}
+                {uploadedFiles.map((fileUrl, index) => (
+                    <ListItem key={index}>
+                        <Image
+                            src={fileUrl}
+                            alt={`File ${index + 1}`}
+                            width={100}
+                            height={100}
+                            style={{ marginRight: 16 }}
+                        />
+                        <Button
+                            variant="contained"
+                            color="primary"
+                            onClick={() => window.open(fileUrl, "_blank")}
+                        >
+                            View
+                        </Button>
                     </ListItem>
                 ))}
             </List>
