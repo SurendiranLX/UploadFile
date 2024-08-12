@@ -1,18 +1,15 @@
-// src/App.tsx
-
 "use client";
 
 import React, { useState } from "react";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { auth, storage } from "../../firebaseConfig";
-import { signInWithPopup, GoogleAuthProvider } from "firebase/auth";
 import {
     ref,
     uploadBytesResumable,
     getDownloadURL,
     listAll,
 } from "firebase/storage";
-import GooglePicker from "react-google-picker";
+import useDrivePicker from "react-google-drive-picker";
 import {
     Button,
     Menu,
@@ -29,12 +26,6 @@ import LinkIcon from "@mui/icons-material/Link";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import Image from "next/image";
 
-declare global {
-    interface Window {
-        google: any;
-    }
-}
-
 const App: React.FC = () => {
     const [user] = useAuthState(auth);
     const [files, setFiles] = useState<FileList | null>(null);
@@ -49,8 +40,12 @@ const App: React.FC = () => {
     >({});
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
+    // Use the hook to manage picker
+    const [openPicker, authResponse] = useDrivePicker();
+
     const clientId =
         "427027192929-5uou3ue38lajqm3qmo2d3oouqur8ut31.apps.googleusercontent.com";
+    const developerKey = "AIzaSyBczmq58UjA4i7urh4aVhSBEyq0JZQGpt4";
     const scope = ["https://www.googleapis.com/auth/drive.file"];
 
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -134,14 +129,73 @@ const App: React.FC = () => {
         setAnchorEl(null);
     };
 
-    const handlePickerChange = (data: any) => {
-        if (
-            data[window.google.picker.Response.ACTION] ===
-            window.google.picker.Action.PICKED
-        ) {
-            const doc = data[window.google.picker.Response.DOCUMENTS][0];
-            console.log("Document selected is", doc);
-            // You can use doc.id or doc.url for further operations
+    const handleGoogleDriveAccess = () => {
+        openPicker({
+            clientId: clientId,
+            developerKey: developerKey,
+            viewId: "DOCS", // Keep as DOCS if specific image views aren't available
+            token: authResponse?.access_token, // Pass token if required
+            multiselect: false,
+            mimeTypes: ["image/png", "image/jpeg", "image/jpg"], // Specify the MIME types for images
+            callbackFunction: handlePickerChange,
+        });
+    };
+
+    const handlePickerChange = async (data) => {
+        if (data.action === window.google.picker.Action.PICKED) {
+            const docs = data.docs;
+            console.log("Documents selected: ", docs);
+
+            // Assume the first document is the one we want to upload
+            const file = docs[0];
+            if (file) {
+                try {
+                    const fileUrl = file.url;
+                    const fileName = file.name;
+
+                    // Fetch the file from the URL provided by Google Drive
+                    const response = await fetch(fileUrl);
+                    const blob = await response.blob();
+
+                    // Upload the fetched file blob to Firebase Storage
+                    const storageRef = ref(storage, `uploads/${fileName}`);
+                    const uploadTask = uploadBytesResumable(storageRef, blob);
+
+                    uploadTask.on(
+                        "state_changed",
+                        (snapshot) => {
+                            const progress =
+                                (snapshot.bytesTransferred /
+                                    snapshot.totalBytes) *
+                                100;
+                            console.log("Upload is " + progress + "% done");
+                            setUploadProgress({
+                                ...uploadProgress,
+                                [fileName]: progress,
+                            });
+                        },
+                        (error) => {
+                            console.error("Upload error:", error);
+                        },
+                        () => {
+                            getDownloadURL(uploadTask.snapshot.ref).then(
+                                (downloadURL) => {
+                                    console.log(
+                                        "File available at",
+                                        downloadURL
+                                    );
+                                    setUploadedFiles((prevFiles) => [
+                                        ...prevFiles,
+                                        downloadURL,
+                                    ]);
+                                }
+                            );
+                        }
+                    );
+                } catch (error) {
+                    console.error("Failed to fetch or upload file:", error);
+                }
+            }
         }
     };
 
@@ -199,29 +253,14 @@ const App: React.FC = () => {
                         Upload
                     </Button>
                 </MenuItem>
-                <MenuItem>
-                    <GooglePicker
-                        clientId={clientId}
-                        developerKey={"AIzaSyBczmq58UjA4i7urh4aVhSBEyq0JZQGpt4"}
-                        scope={scope}
-                        onChange={handlePickerChange}
-                        onAuthFailed={() =>
-                            console.error("Google Picker auth failed")
-                        }
-                        multiselect={true}
-                        navHidden={true}
-                        authImmediate={false}
-                        viewId={"DOCS"}
-                    >
-                        <CloudUploadIcon sx={{ mr: 1 }} /> From Google Drive
-                    </GooglePicker>
+                <MenuItem onClick={handleGoogleDriveAccess}>
+                    <CloudUploadIcon sx={{ mr: 1 }} /> From Google Drive
                 </MenuItem>
             </Menu>
 
             <List sx={{ mt: 3 }}>
                 {Object.entries(uploadProgress).map(([fileName, progress]) => (
                     <ListItem key={fileName}>
-                        {/* <Typography sx={{ mr: 2 }}>{fileName}</Typography> */}
                         {localPreviews[fileName] && (
                             <Image
                                 src={localPreviews[fileName]}
